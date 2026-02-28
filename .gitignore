@@ -1,0 +1,39 @@
+# Build artifacts
+bin/
+*.exe
+*.dll
+*.pdb
+*.cache
+
+# .NET artifacts
+obj/
+[Bb]in/
+[Oo]bj/
+*.user
+*.suo
+*.userprefs
+*.nupkg
+*.snupkg
+project.lock.json
+*.nuget.props
+*.nuget.targets
+
+# Test results
+TestResults/
+coverage/
+*.trx
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.vs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# NuGet
+packages/
