@@ -13,4 +13,3 @@ All notable changes to the OJS .NET Contrib packages are documented here.
   - `OjsWorkerHostedService` for background worker lifecycle management
   - Configuration binding from `IConfiguration` and environment variables
   - `IOjsJobHandler` interface for DI-friendly job handlers
-
