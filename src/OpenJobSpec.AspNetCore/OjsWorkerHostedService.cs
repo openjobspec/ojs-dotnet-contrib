@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using OpenJobSpec;
 
 namespace OpenJobSpec.AspNetCore;
 
@@ -10,11 +11,13 @@ namespace OpenJobSpec.AspNetCore;
 internal sealed class OjsWorkerHostedService : IHostedService
 {
     private readonly OJSWorker _worker;
+    private readonly OjsOptions _options;
     private readonly ILogger<OjsWorkerHostedService> _logger;
 
-    public OjsWorkerHostedService(OJSWorker worker, ILogger<OjsWorkerHostedService> logger)
+    public OjsWorkerHostedService(OJSWorker worker, OjsOptions options, ILogger<OjsWorkerHostedService> logger)
     {
         _worker = worker;
+        _options = options;
         _logger = logger;
     }
 
@@ -22,8 +25,8 @@ internal sealed class OjsWorkerHostedService : IHostedService
     {
         _logger.LogInformation(
             "OJS Worker starting (queues: {Queues}, concurrency: {Concurrency})",
-            string.Join(", ", _worker.Options?.Queues ?? ["default"]),
-            _worker.Options?.Concurrency ?? 10
+            string.Join(", ", _options.Worker.Queues),
+            _options.Worker.Concurrency
         );
 
         _ = Task.Run(() => _worker.StartAsync(cancellationToken), cancellationToken);

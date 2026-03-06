@@ -1,21 +1,23 @@
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using OpenJobSpec;
 
-namespace OpenJobSpec.AspNetCore;
+namespace OpenJobSpec.WorkerService;
 
 /// <summary>
 /// Health check that validates connectivity to the OJS backend.
 /// </summary>
-internal sealed class OjsHealthCheck : IHealthCheck
+internal sealed class OjsWorkerHealthCheck : IHealthCheck
 {
     private readonly OJSClient _client;
 
-    public OjsHealthCheck(OJSClient client)
+    public OjsWorkerHealthCheck(OJSClient client)
     {
         _client = client;
     }
 
-    public async Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken = default)
+    public async Task<HealthCheckResult> CheckHealthAsync(
+        HealthCheckContext context,
+        CancellationToken cancellationToken = default)
     {
         try
         {

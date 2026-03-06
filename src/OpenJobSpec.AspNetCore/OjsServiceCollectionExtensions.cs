@@ -2,6 +2,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using OpenJobSpec;
 
 namespace OpenJobSpec.AspNetCore;
 
@@ -88,7 +89,7 @@ public static class OjsServiceCollectionExtensions
             var worker = new OJSWorker(options.BaseUrl, new OJSWorkerOptions
             {
                 AuthToken = options.AuthToken,
-                Queues = options.Worker.Queues,
+                Queues = new List<string>(options.Worker.Queues),
                 Concurrency = options.Worker.Concurrency,
             });
 

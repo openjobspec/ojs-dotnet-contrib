@@ -51,7 +51,7 @@ public class ServiceRegistrationTests
         var provider = services.BuildServiceProvider();
         var options = provider.GetRequiredService<OjsOptions>();
 
-        Assert.Equal(["high", "low"], options.Worker.Queues);
+        Assert.Equal(new[] { "high", "low" }, options.Worker.Queues);
         Assert.Equal(5, options.Worker.Concurrency);
     }
 
