@@ -13,3 +13,4 @@ public interface IOjsJobHandler
     /// <param name="context">The job context containing job data and control methods.</param>
     Task HandleAsync(JobContext context);
 }
+
