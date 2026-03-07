@@ -20,3 +20,4 @@ Instead, email [security@openjobspec.org](mailto:security@openjobspec.org) with:
 - Potential impact
 
 We will acknowledge receipt within **48 hours** and provide an estimated timeline for a fix within **7 days**.
+
