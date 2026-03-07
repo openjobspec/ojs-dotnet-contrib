@@ -30,3 +30,4 @@ dotnet new classlib -o src/OpenJobSpec.YourFramework
 - Use nullable reference types (`<Nullable>enable</Nullable>`)
 - Target both `net8.0` and `net10.0` where possible
 - Add XML doc comments to all public APIs
+
