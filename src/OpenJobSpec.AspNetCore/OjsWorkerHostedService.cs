@@ -40,3 +40,4 @@ internal sealed class OjsWorkerHostedService : IHostedService
         _logger.LogInformation("OJS Worker stopped");
     }
 }
+
