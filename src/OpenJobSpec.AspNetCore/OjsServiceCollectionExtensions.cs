@@ -72,6 +72,45 @@ public static class OjsServiceCollectionExtensions
         return services;
     }
 
+    /// <summary>
+    /// Adds OJS workflow service to the DI container.
+    /// Requires <see cref="AddOjs(IServiceCollection, Action{OjsOptions})"/> to be called first.
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <returns>The service collection for chaining.</returns>
+    public static IServiceCollection AddOjsWorkflows(this IServiceCollection services)
+    {
+        services.TryAddSingleton<OjsWorkflowService>();
+        return services;
+    }
+
+    /// <summary>
+    /// Adds OJS event subscription service to the DI container.
+    /// Requires <see cref="AddOjs(IServiceCollection, Action{OjsOptions})"/> to be called first.
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <returns>The service collection for chaining.</returns>
+    public static IServiceCollection AddOjsEventSubscription(this IServiceCollection services)
+    {
+        services.TryAddSingleton<OjsEventSubscriptionService>();
+        return services;
+    }
+
+    /// <summary>
+    /// Registers a typed event handler with the OJS event subscription service.
+    /// The handler is resolved from DI when events arrive.
+    /// </summary>
+    /// <typeparam name="THandler">The handler type implementing <see cref="IOjsEventHandler"/>.</typeparam>
+    /// <param name="services">The service collection.</param>
+    /// <returns>The service collection for chaining.</returns>
+    public static IServiceCollection AddOjsEventHandler<THandler>(this IServiceCollection services)
+        where THandler : class, IOjsEventHandler
+    {
+        services.TryAddTransient<THandler>();
+        services.AddSingleton(new OjsEventHandlerRegistration(typeof(THandler)));
+        return services;
+    }
+
     private static IServiceCollection AddOjsCore(this IServiceCollection services, OjsOptions options)
     {
         services.AddSingleton(options);
@@ -137,3 +176,8 @@ public static class OjsHealthCheckExtensions
 /// Internal registration record for mapping job types to handler types.
 /// </summary>
 internal sealed record OjsHandlerRegistration(string JobType, Type HandlerType);
+
+/// <summary>
+/// Internal registration record for mapping event handler types.
+/// </summary>
+internal sealed record OjsEventHandlerRegistration(Type HandlerType);
