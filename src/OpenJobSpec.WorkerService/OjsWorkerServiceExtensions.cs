@@ -104,6 +104,62 @@ public static class OjsWorkerServiceExtensions
         return services;
     }
 
+    /// <summary>
+    /// Registers a typed event listener for OJS events.
+    /// The listener is resolved from DI when events are dispatched.
+    /// </summary>
+    /// <typeparam name="TListener">The listener type implementing IOjsEventListener.</typeparam>
+    /// <param name="services">The service collection.</param>
+    /// <returns>The service collection for chaining.</returns>
+    public static IServiceCollection AddOjsEventListener<TListener>(
+        this IServiceCollection services)
+        where TListener : class, IOjsEventListener
+    {
+        services.AddTransient<IOjsEventListener, TListener>();
+        return services;
+    }
+
+    /// <summary>
+    /// Registers a cron schedule that enqueues jobs on the specified schedule.
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <param name="name">Unique name for this cron schedule.</param>
+    /// <param name="cronExpression">Standard 5-field cron expression (minute hour day month weekday).</param>
+    /// <param name="jobType">The OJS job type to enqueue when the schedule triggers.</param>
+    /// <param name="args">Optional job arguments.</param>
+    /// <param name="queue">Target queue (default: "default").</param>
+    /// <param name="timezone">Optional IANA timezone for schedule evaluation.</param>
+    /// <returns>The service collection for chaining.</returns>
+    public static IServiceCollection AddOjsCronSchedule(
+        this IServiceCollection services,
+        string name,
+        string cronExpression,
+        string jobType,
+        object[]? args = null,
+        string queue = "default",
+        string? timezone = null)
+    {
+        services.AddSingleton(new OjsCronRegistration(name, cronExpression, jobType, args, queue, timezone));
+        return services;
+    }
+
+    /// <summary>
+    /// Adds OJS encryption support for job argument encryption/decryption.
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <param name="configure">Action to configure encryption options.</param>
+    /// <returns>The service collection for chaining.</returns>
+    public static IServiceCollection AddOjsEncryption(
+        this IServiceCollection services,
+        Action<OjsEncryptionServiceOptions> configure)
+    {
+        var options = new OjsEncryptionServiceOptions();
+        configure(options);
+        services.AddSingleton(options);
+        services.AddSingleton<OjsEncryptionService>();
+        return services;
+    }
+
     private static void RegisterServices(IServiceCollection services, OjsWorkerServiceOptions options)
     {
         services.AddSingleton(options);
@@ -149,6 +205,25 @@ public static class OjsWorkerServiceExtensions
                     sp => new OjsWorkerHealthCheck(sp.GetRequiredService<OJSClient>()),
                     failureStatus: null,
                     tags: ["ojs", "worker"]));
+        }
+
+        if (options.EventListener.Enabled)
+        {
+            services.AddSingleton(options.EventListener);
+            services.AddHostedService<OjsEventListenerService>();
+        }
+
+        if (options.Cron.Enabled)
+        {
+            services.AddSingleton(options.Cron);
+            services.AddHostedService<OjsCronSchedulerService>();
+        }
+
+        if (!string.IsNullOrEmpty(options.Encryption.EncryptionKey) ||
+            !string.IsNullOrEmpty(options.Encryption.CodecServerUrl))
+        {
+            services.TryAddSingleton(options.Encryption);
+            services.TryAddSingleton<OjsEncryptionService>();
         }
     }
 

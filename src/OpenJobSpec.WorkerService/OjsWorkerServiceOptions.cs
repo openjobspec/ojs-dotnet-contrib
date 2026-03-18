@@ -50,4 +50,25 @@ public class OjsWorkerServiceOptions
     /// Name of the health check (when enabled).
     /// </summary>
     public string HealthCheckName { get; set; } = "ojs";
+
+    /// <summary>
+    /// Event listener configuration.
+    /// </summary>
+    public OjsEventListenerOptions EventListener { get; set; } = new();
+
+    /// <summary>
+    /// Cron scheduler configuration.
+    /// </summary>
+    public OjsCronOptions Cron { get; set; } = new();
+
+    /// <summary>
+    /// Encryption service configuration.
+    /// </summary>
+    public OjsEncryptionServiceOptions Encryption { get; set; } = new();
+
+    /// <summary>
+    /// Pre-shutdown hooks called before the worker stops processing.
+    /// Each hook receives a cancellation token and should complete promptly.
+    /// </summary>
+    public List<Func<CancellationToken, Task>> PreShutdownHooks { get; set; } = [];
 }

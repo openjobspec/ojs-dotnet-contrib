@@ -208,6 +208,115 @@ public class OjsWorkerServiceRegistrationTests
         Assert.NotNull(worker);
         Assert.Equal("http://test:8080", options.BaseUrl);
     }
+
+    [Fact]
+    public void AddOjsEventListener_RegistersInDI()
+    {
+        var builder = Host.CreateApplicationBuilder();
+        builder.AddOjsWorker(opts => opts.BaseUrl = "http://test:8080");
+        builder.Services.AddOjsEventListener<TestRegistrationEventListener>();
+
+        var provider = builder.Services.BuildServiceProvider();
+        var listeners = provider.GetServices<IOjsEventListener>().ToList();
+
+        Assert.Single(listeners);
+        Assert.IsType<TestRegistrationEventListener>(listeners[0]);
+    }
+
+    [Fact]
+    public void AddOjsCronSchedule_RegistersInDI()
+    {
+        var builder = Host.CreateApplicationBuilder();
+        builder.AddOjsWorker(opts => opts.BaseUrl = "http://test:8080");
+        builder.Services.AddOjsCronSchedule("daily", "0 2 * * *", "cleanup.run");
+
+        var provider = builder.Services.BuildServiceProvider();
+        var schedules = provider.GetServices<OjsCronRegistration>().ToList();
+
+        Assert.Single(schedules);
+        Assert.Equal("daily", schedules[0].Name);
+        Assert.Equal("cleanup.run", schedules[0].JobType);
+    }
+
+    [Fact]
+    public void AddOjsEncryption_RegistersInDI()
+    {
+        var builder = Host.CreateApplicationBuilder();
+        builder.AddOjsWorker(opts => opts.BaseUrl = "http://test:8080");
+        builder.Services.AddOjsEncryption(opts =>
+        {
+            opts.EncryptionKey = Convert.ToBase64String(new byte[32]);
+        });
+
+        var provider = builder.Services.BuildServiceProvider();
+        var service = provider.GetService<OjsEncryptionService>();
+
+        Assert.NotNull(service);
+    }
+
+    [Fact]
+    public void EventListenerService_RegisteredWhenEnabled()
+    {
+        var builder = Host.CreateApplicationBuilder();
+        builder.AddOjsWorker(opts =>
+        {
+            opts.BaseUrl = "http://test:8080";
+            opts.EventListener.Enabled = true;
+        });
+
+        var provider = builder.Services.BuildServiceProvider();
+        var hostedServices = provider.GetServices<IHostedService>();
+
+        Assert.Contains(hostedServices, s => s.GetType().Name == "OjsEventListenerService");
+    }
+
+    [Fact]
+    public void CronSchedulerService_RegisteredWhenEnabled()
+    {
+        var builder = Host.CreateApplicationBuilder();
+        builder.AddOjsWorker(opts =>
+        {
+            opts.BaseUrl = "http://test:8080";
+            opts.Cron.Enabled = true;
+        });
+
+        var provider = builder.Services.BuildServiceProvider();
+        var hostedServices = provider.GetServices<IHostedService>();
+
+        Assert.Contains(hostedServices, s => s.GetType().Name == "OjsCronSchedulerService");
+    }
+
+    [Fact]
+    public void EventListenerService_NotRegisteredWhenDisabled()
+    {
+        var builder = Host.CreateApplicationBuilder();
+        builder.AddOjsWorker(opts =>
+        {
+            opts.BaseUrl = "http://test:8080";
+            opts.EventListener.Enabled = false;
+        });
+
+        var provider = builder.Services.BuildServiceProvider();
+        var hostedServices = provider.GetServices<IHostedService>();
+
+        Assert.DoesNotContain(hostedServices, s => s.GetType().Name == "OjsEventListenerService");
+    }
+
+    [Fact]
+    public void CronSchedulerService_NotRegisteredWhenDisabled()
+    {
+        var builder = Host.CreateApplicationBuilder();
+        builder.AddOjsWorker(opts =>
+        {
+            opts.BaseUrl = "http://test:8080";
+            opts.Cron.Enabled = false;
+        });
+
+        var provider = builder.Services.BuildServiceProvider();
+        var hostedServices = provider.GetServices<IHostedService>();
+
+        Assert.DoesNotContain(hostedServices, s => s.GetType().Name == "OjsCronSchedulerService");
+    }
 }
 
 // Test handlers
@@ -219,4 +328,10 @@ internal class TestEmailHandler : IOjsJobHandler
 internal class TestReportHandler : IOjsJobHandler
 {
     public Task HandleAsync(JobContext context) => Task.CompletedTask;
+}
+
+internal class TestRegistrationEventListener : IOjsEventListener
+{
+    public string EventType => "job.completed";
+    public Task HandleAsync(OjsEventData eventData, CancellationToken ct = default) => Task.CompletedTask;
 }
