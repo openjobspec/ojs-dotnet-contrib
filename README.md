@@ -1,4 +1,5 @@
 # OJS .NET Contrib
+[![Stability: beta](https://img.shields.io/badge/stability-beta-yellow.svg)](https://github.com/openjobspec/openjobspec/blob/main/STABILITY.md)
 
 [![NuGet](https://img.shields.io/nuget/v/OpenJobSpec.AspNetCore)](https://www.nuget.org/packages/OpenJobSpec.AspNetCore)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
