@@ -11,23 +11,28 @@ namespace OpenJobSpec.WorkerService;
 /// </summary>
 internal sealed class OjsEventListenerService : BackgroundService
 {
-    private readonly OJSClient _client;
     private readonly IServiceProvider _services;
     private readonly OjsEventListenerOptions _options;
     private readonly ILogger<OjsEventListenerService> _logger;
     private readonly HashSet<string> _eventTypeFilter;
+    private readonly TaskCompletionSource _ready =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     public OjsEventListenerService(
-        OJSClient client,
         IServiceProvider services,
         OjsEventListenerOptions options,
         ILogger<OjsEventListenerService> logger)
     {
-        _client = client;
         _services = services;
         _options = options;
         _logger = logger;
         _eventTypeFilter = new HashSet<string>(options.EventTypes);
+    }
+
+    public override async Task StartAsync(CancellationToken cancellationToken)
+    {
+        await base.StartAsync(cancellationToken);
+        await _ready.Task.WaitAsync(cancellationToken);
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -37,23 +42,37 @@ internal sealed class OjsEventListenerService : BackgroundService
             string.Join(", ", _options.EventTypes),
             _options.PollIntervalSeconds);
 
-        var worker = _services.GetService<OJSWorker>();
-        if (worker is not null)
+        try
         {
-            worker.Events.OnAny(async evt =>
+            var worker = _services.GetService<OJSWorker>();
+            if (worker is not null)
             {
-                if (_eventTypeFilter.Contains(evt.Type))
+                worker.Events.OnAny(async evt =>
                 {
-                    var eventData = MapFromWorkerEvent(evt);
-                    await DispatchEventAsync(eventData, stoppingToken);
-                }
-            });
+                    if (_eventTypeFilter.Contains(evt.Type))
+                    {
+                        var eventData = MapFromWorkerEvent(evt);
+                        await OjsEventListenerDispatcher.DispatchAsync(
+                            _services,
+                            _logger,
+                            eventData,
+                            stoppingToken);
+                    }
+                });
 
-            _logger.LogInformation("Subscribed to OJS worker events");
+                _logger.LogInformation("Subscribed to OJS worker events");
+            }
+            else
+            {
+                _logger.LogWarning("OJS Worker not available, event listener running in poll-only mode");
+            }
+
+            _ready.TrySetResult();
         }
-        else
+        catch (Exception ex)
         {
-            _logger.LogWarning("OJS Worker not available, event listener running in poll-only mode");
+            _ready.TrySetException(ex);
+            throw;
         }
 
         try
@@ -66,36 +85,6 @@ internal sealed class OjsEventListenerService : BackgroundService
         }
 
         _logger.LogInformation("OJS Event Listener stopped");
-    }
-
-    private async Task DispatchEventAsync(OjsEventData eventData, CancellationToken ct)
-    {
-        try
-        {
-            using var scope = _services.CreateScope();
-            var listeners = scope.ServiceProvider.GetServices<IOjsEventListener>();
-
-            foreach (var listener in listeners)
-            {
-                if (listener.EventType == eventData.EventType)
-                {
-                    try
-                    {
-                        await listener.HandleAsync(eventData, ct);
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(ex,
-                            "Event listener {Listener} failed for event {EventType} (job: {JobId})",
-                            listener.GetType().Name, eventData.EventType, eventData.JobId);
-                    }
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to dispatch event {EventType}", eventData.EventType);
-        }
     }
 
     private static OjsEventData MapFromWorkerEvent(OJSEvent evt)
@@ -111,6 +100,51 @@ internal sealed class OjsEventListenerService : BackgroundService
             Queue: data?.TryGetValue("queue", out var q) == true ? q?.ToString() ?? "default" : "default",
             Metadata: data
         );
+    }
+}
+
+internal static class OjsEventListenerDispatcher
+{
+    internal static async Task DispatchAsync(
+        IServiceProvider services,
+        ILogger logger,
+        OjsEventData eventData,
+        CancellationToken ct)
+    {
+        try
+        {
+            using var scope = services.CreateScope();
+            var listeners = scope.ServiceProvider
+                .GetServices<IOjsEventListener>()
+                .Where(listener => listener.EventType == eventData.EventType);
+
+            foreach (var listener in listeners)
+            {
+                await DispatchToListenerAsync(listener, logger, eventData, ct);
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to dispatch event {EventType}", eventData.EventType);
+        }
+    }
+
+    private static async Task DispatchToListenerAsync(
+        IOjsEventListener listener,
+        ILogger logger,
+        OjsEventData eventData,
+        CancellationToken ct)
+    {
+        try
+        {
+            await listener.HandleAsync(eventData, ct);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex,
+                "Event listener {Listener} failed for event {EventType} (job: {JobId})",
+                listener.GetType().Name, eventData.EventType, eventData.JobId);
+        }
     }
 }
 
