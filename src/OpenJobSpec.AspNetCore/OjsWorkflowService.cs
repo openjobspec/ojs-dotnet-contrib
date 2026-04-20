@@ -14,6 +14,9 @@ public sealed class OjsWorkflowService
     private readonly OJSClient _client;
     private readonly ILogger<OjsWorkflowService> _logger;
 
+    /// <summary>Creates a workflow service.</summary>
+    /// <param name="client">OJS client used to submit workflows.</param>
+    /// <param name="logger">Logger for workflow operations.</param>
     public OjsWorkflowService(OJSClient client, ILogger<OjsWorkflowService> logger)
     {
         _client = client ?? throw new ArgumentNullException(nameof(client));
