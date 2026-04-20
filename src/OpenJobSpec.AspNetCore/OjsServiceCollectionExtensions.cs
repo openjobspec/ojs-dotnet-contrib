@@ -22,7 +22,7 @@ public static class OjsServiceCollectionExtensions
         var options = new OjsOptions();
         configure(options);
 
-        return services.AddOjsCore(options);
+        return OjsAspNetCoreServiceGraph.Register(services, options);
     }
 
     /// <summary>
@@ -33,27 +33,8 @@ public static class OjsServiceCollectionExtensions
     /// <returns>The service collection for chaining.</returns>
     public static IServiceCollection AddOjs(this IServiceCollection services, IConfiguration configuration)
     {
-        var options = new OjsOptions();
-        configuration.Bind(options);
-
-        // Support environment variable overrides
-        var envUrl = Environment.GetEnvironmentVariable("OJS_URL");
-        if (!string.IsNullOrEmpty(envUrl))
-            options.BaseUrl = envUrl;
-
-        var envToken = Environment.GetEnvironmentVariable("OJS_AUTH_TOKEN");
-        if (!string.IsNullOrEmpty(envToken))
-            options.AuthToken = envToken;
-
-        var envQueues = Environment.GetEnvironmentVariable("OJS_QUEUES");
-        if (!string.IsNullOrEmpty(envQueues))
-            options.Worker.Queues = envQueues.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-
-        var envConcurrency = Environment.GetEnvironmentVariable("OJS_CONCURRENCY");
-        if (int.TryParse(envConcurrency, out var concurrency))
-            options.Worker.Concurrency = concurrency;
-
-        return services.AddOjsCore(options);
+        var options = OjsAspNetCoreConfiguration.Bind(configuration);
+        return OjsAspNetCoreServiceGraph.Register(services, options);
     }
 
     /// <summary>
@@ -111,46 +92,6 @@ public static class OjsServiceCollectionExtensions
         return services;
     }
 
-    private static IServiceCollection AddOjsCore(this IServiceCollection services, OjsOptions options)
-    {
-        services.AddSingleton(options);
-
-        services.TryAddSingleton<OJSClient>(sp =>
-        {
-            return new OJSClient(options.BaseUrl, new OJSClientOptions
-            {
-                AuthToken = options.AuthToken,
-            });
-        });
-
-        services.TryAddSingleton<OJSWorker>(sp =>
-        {
-            var worker = new OJSWorker(options.BaseUrl, new OJSWorkerOptions
-            {
-                AuthToken = options.AuthToken,
-                Queues = new List<string>(options.Worker.Queues),
-                Concurrency = options.Worker.Concurrency,
-            });
-
-            // Auto-register all handler registrations
-            foreach (var reg in sp.GetServices<OjsHandlerRegistration>())
-            {
-                worker.Register(reg.JobType, async ctx =>
-                {
-                    using var scope = sp.CreateScope();
-                    var handler = (IOjsJobHandler)scope.ServiceProvider.GetRequiredService(reg.HandlerType);
-                    await handler.HandleAsync(ctx);
-                });
-            }
-
-            return worker;
-        });
-
-        // Register OJSWorker as a hosted service so it starts/stops with the app
-        services.AddHostedService<OjsWorkerHostedService>();
-
-        return services;
-    }
 }
 
 /// <summary>
