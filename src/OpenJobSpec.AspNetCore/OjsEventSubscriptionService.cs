@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
 using OpenJobSpec;
 
@@ -12,10 +11,11 @@ public sealed class OjsEventSubscriptionService : IDisposable
 {
     private readonly OJSWorker _worker;
     private readonly ILogger<OjsEventSubscriptionService> _logger;
-    private readonly ConcurrentDictionary<Guid, SubscriptionEntry> _subscriptions = new();
-    private readonly ConcurrentDictionary<Guid, Action> _unsubscribeActions = new();
-    private bool _disposed;
+    private readonly SubscriptionRegistry _subscriptions = new();
 
+    /// <summary>Creates an event subscription service.</summary>
+    /// <param name="worker">Worker whose event stream is observed.</param>
+    /// <param name="logger">Logger for subscription failures.</param>
     public OjsEventSubscriptionService(OJSWorker worker, ILogger<OjsEventSubscriptionService> logger)
     {
         _worker = worker ?? throw new ArgumentNullException(nameof(worker));
@@ -33,19 +33,11 @@ public sealed class OjsEventSubscriptionService : IDisposable
         ArgumentException.ThrowIfNullOrWhiteSpace(eventType);
         ArgumentNullException.ThrowIfNull(handler);
 
-        ObjectDisposedException.ThrowIf(_disposed, this);
-
-        var subscriptionId = Guid.NewGuid();
-        var entry = new SubscriptionEntry(eventType, null, handler);
-        _subscriptions[subscriptionId] = entry;
-
-        var unsubscribe = _worker.Events.On(eventType, async evt =>
+        var subscriptionId = _subscriptions.Add(this, () => _worker.Events.On(eventType, async evt =>
         {
             var ojsEvent = MapEvent(evt);
             await handler(ojsEvent);
-        });
-
-        _unsubscribeActions[subscriptionId] = unsubscribe;
+        }));
         _logger.LogDebug("Subscribed to event type '{EventType}' (subscription: {SubscriptionId})", eventType, subscriptionId);
 
         return new Subscription(this, subscriptionId);
@@ -63,13 +55,7 @@ public sealed class OjsEventSubscriptionService : IDisposable
         ArgumentException.ThrowIfNullOrWhiteSpace(jobType);
         ArgumentNullException.ThrowIfNull(handler);
 
-        ObjectDisposedException.ThrowIf(_disposed, this);
-
-        var subscriptionId = Guid.NewGuid();
-        var entry = new SubscriptionEntry(null, jobType, handler);
-        _subscriptions[subscriptionId] = entry;
-
-        var unsubscribe = _worker.Events.OnAny(async evt =>
+        var subscriptionId = _subscriptions.Add(this, () => _worker.Events.OnAny(async evt =>
         {
             var data = evt.Data;
             if (data is not null && data.TryGetValue("job_type", out var jt) && jt?.ToString() == jobType)
@@ -77,9 +63,7 @@ public sealed class OjsEventSubscriptionService : IDisposable
                 var ojsEvent = MapEvent(evt);
                 await handler(ojsEvent);
             }
-        });
-
-        _unsubscribeActions[subscriptionId] = unsubscribe;
+        }));
         _logger.LogDebug("Subscribed to job type '{JobType}' events (subscription: {SubscriptionId})", jobType, subscriptionId);
 
         return new Subscription(this, subscriptionId);
@@ -91,7 +75,7 @@ public sealed class OjsEventSubscriptionService : IDisposable
     /// <param name="ct">Cancellation token.</param>
     public Task StartAsync(CancellationToken ct = default)
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        _subscriptions.ThrowIfDisposed(this);
         _logger.LogInformation("OJS event subscription service started with {Count} subscriptions", _subscriptions.Count);
         return Task.CompletedTask;
     }
@@ -114,28 +98,27 @@ public sealed class OjsEventSubscriptionService : IDisposable
     /// <inheritdoc/>
     public void Dispose()
     {
-        if (_disposed) return;
-        _disposed = true;
+        var subscriptionIds = _subscriptions.BeginDispose();
+        if (subscriptionIds is null)
+            return;
 
-        RemoveAllSubscriptions();
+        foreach (var subscriptionId in subscriptionIds)
+        {
+            RemoveSubscription(subscriptionId);
+        }
     }
 
     private void RemoveSubscription(Guid subscriptionId)
     {
-        if (_subscriptions.TryRemove(subscriptionId, out _))
+        if (_subscriptions.Remove(subscriptionId))
         {
-            if (_unsubscribeActions.TryRemove(subscriptionId, out var unsubscribe))
-            {
-                unsubscribe();
-            }
-
             _logger.LogDebug("Unsubscribed (subscription: {SubscriptionId})", subscriptionId);
         }
     }
 
     private void RemoveAllSubscriptions()
     {
-        foreach (var id in _subscriptions.Keys.ToArray())
+        foreach (var id in _subscriptions.GetIds())
         {
             RemoveSubscription(id);
         }
@@ -157,7 +140,76 @@ public sealed class OjsEventSubscriptionService : IDisposable
             data is not null ? new Dictionary<string, object?>(data) : null);
     }
 
-    private sealed record SubscriptionEntry(string? EventType, string? JobType, Func<OjsEvent, Task> Handler);
+    private sealed class SubscriptionRegistry
+    {
+        private readonly object _gate = new();
+        private readonly Dictionary<Guid, Action> _unsubscribeActions = new();
+        private bool _disposed;
+
+        internal int Count
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    return _unsubscribeActions.Count;
+                }
+            }
+        }
+
+        internal Guid Add(object owner, Func<Action> subscribe)
+        {
+            lock (_gate)
+            {
+                ObjectDisposedException.ThrowIf(_disposed, owner);
+
+                var subscriptionId = Guid.NewGuid();
+                _unsubscribeActions.Add(subscriptionId, subscribe());
+                return subscriptionId;
+            }
+        }
+
+        internal bool Remove(Guid subscriptionId)
+        {
+            Action? unsubscribe;
+            lock (_gate)
+            {
+                if (!_unsubscribeActions.Remove(subscriptionId, out unsubscribe))
+                    return false;
+            }
+
+            unsubscribe();
+            return true;
+        }
+
+        internal Guid[] GetIds()
+        {
+            lock (_gate)
+            {
+                return _unsubscribeActions.Keys.ToArray();
+            }
+        }
+
+        internal void ThrowIfDisposed(object owner)
+        {
+            lock (_gate)
+            {
+                ObjectDisposedException.ThrowIf(_disposed, owner);
+            }
+        }
+
+        internal Guid[]? BeginDispose()
+        {
+            lock (_gate)
+            {
+                if (_disposed)
+                    return null;
+
+                _disposed = true;
+                return _unsubscribeActions.Keys.ToArray();
+            }
+        }
+    }
 
     private sealed class Subscription : IDisposable
     {

@@ -1,5 +1,7 @@
+using System.Reflection;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using OpenJobSpec;
 using OpenJobSpec.AspNetCore;
 
 namespace OpenJobSpec.AspNetCore.Tests;
@@ -137,6 +139,77 @@ public class OjsEventSubscriptionServiceTests
     }
 
     [Fact]
+    public async Task SubscriptionDispose_IsIdempotentAndStopsCallbackDelivery()
+    {
+        using var provider = CreateProvider();
+        var worker = provider.GetRequiredService<OJSWorker>();
+        var eventService = provider.GetRequiredService<OjsEventSubscriptionService>();
+        var callbackCount = 0;
+        var subscription = eventService.Subscribe(
+            "job.completed",
+            _ =>
+            {
+                Interlocked.Increment(ref callbackCount);
+                return Task.CompletedTask;
+            });
+
+        await EmitAsync(worker, "job.completed");
+        subscription.Dispose();
+        subscription.Dispose();
+        await EmitAsync(worker, "job.completed");
+
+        Assert.Equal(1, callbackCount);
+        Assert.Equal(0, eventService.SubscriptionCount);
+    }
+
+    [Fact]
+    public async Task ConcurrentSubscriptionAndServiceDisposal_LeavesNoActiveCallbacks()
+    {
+        using var provider = CreateProvider();
+        var worker = provider.GetRequiredService<OJSWorker>();
+        var eventService = provider.GetRequiredService<OjsEventSubscriptionService>();
+        var callbackCount = 0;
+        using var start = new ManualResetEventSlim();
+
+        var subscribingTasks = Enumerable.Range(0, 8)
+            .Select(_ => Task.Run(() =>
+            {
+                start.Wait();
+                for (var i = 0; i < 250; i++)
+                {
+                    try
+                    {
+                        eventService.Subscribe(
+                            "job.completed",
+                            _ =>
+                            {
+                                Interlocked.Increment(ref callbackCount);
+                                return Task.CompletedTask;
+                            });
+                    }
+                    catch (ObjectDisposedException)
+                    {
+                        return;
+                    }
+                }
+            }))
+            .ToArray();
+
+        var disposeTask = Task.Run(() =>
+        {
+            start.Wait();
+            eventService.Dispose();
+        });
+
+        start.Set();
+        await Task.WhenAll(subscribingTasks.Append(disposeTask));
+        await EmitAsync(worker, "job.completed");
+
+        Assert.Equal(0, eventService.SubscriptionCount);
+        Assert.Equal(0, callbackCount);
+    }
+
+    [Fact]
     public void OjsEvent_RecordProperties_ArePreserved()
     {
         var now = DateTimeOffset.UtcNow;
@@ -228,6 +301,41 @@ public class OjsEventSubscriptionServiceTests
         var descriptor = services.FirstOrDefault(d => d.ServiceType == typeof(TestEventHandler));
         Assert.NotNull(descriptor);
         Assert.Equal(ServiceLifetime.Transient, descriptor.Lifetime);
+    }
+
+    private static ServiceProvider CreateProvider()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddOjs(opts => opts.BaseUrl = "http://test:8080");
+        services.AddOjsEventSubscription();
+        return services.BuildServiceProvider();
+    }
+
+    private static async Task EmitAsync(OJSWorker worker, string eventType)
+    {
+        var emitAsync = typeof(OJSEventEmitter).GetMethod(
+            "EmitAsync",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.NotNull(emitAsync);
+
+        var task = emitAsync.Invoke(worker.Events, [
+            new OJSEvent
+            {
+                Id = Guid.NewGuid().ToString(),
+                Type = eventType,
+                Source = "test",
+                Time = DateTimeOffset.UtcNow,
+                Data = new Dictionary<string, object?>
+                {
+                    ["job_id"] = "job-1",
+                    ["job_type"] = "email.send",
+                    ["state"] = "completed",
+                },
+            },
+        ]);
+
+        await Assert.IsAssignableFrom<Task>(task);
     }
 }
 
