@@ -1,3 +1,5 @@
+using System.Reflection;
+using System.Security.Cryptography;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using OpenJobSpec.WorkerService;
@@ -104,6 +106,21 @@ public class OjsEncryptionServiceTests
     }
 
     [Fact]
+    public async Task DecryptAsync_KnownAes256GcmWirePayload()
+    {
+        const string key = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=";
+        const string payload = "AAECAwQFBgcICQoLPCC8dKfH+GCvKPOpi8tJX7D0qxaEAi8ZGl3H4HAIad4vY8uSy+Nv5R2gjZzGuMCdOtuzUEJmjBY=";
+        using var service = new OjsEncryptionService(new OjsEncryptionServiceOptions
+        {
+            EncryptionKey = key,
+        });
+
+        var plaintext = await service.DecryptAsync($"ojs-encrypted:{payload}");
+
+        Assert.Equal("""{"job":{"id":"123","type":"email.send"}}""", plaintext);
+    }
+
+    [Fact]
     public void IsEncrypted_DetectsPrefix()
     {
         var options = new OjsEncryptionServiceOptions();
@@ -132,6 +149,35 @@ public class OjsEncryptionServiceTests
 
         await Assert.ThrowsAsync<InvalidOperationException>(
             () => service.DecryptAsync("ojs-encrypted:abc123"));
+    }
+
+    [Fact]
+    public async Task CodecServerOnly_PreservesNoLocalKeyErrors()
+    {
+        using var service = new OjsEncryptionService(new OjsEncryptionServiceOptions
+        {
+            CodecServerUrl = "https://codec.example.test/base/",
+        });
+
+        var encryptException = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => service.EncryptAsync("test"));
+        var decryptException = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => service.DecryptAsync("ojs-encrypted:abc123"));
+
+        Assert.Equal("No encryption key configured", encryptException.Message);
+        Assert.Equal("No encryption key configured", decryptException.Message);
+    }
+
+    [Fact]
+    public void InvalidCodecServerUrl_PreservesConstructorError()
+    {
+        var exception = Assert.Throws<UriFormatException>(() =>
+            new OjsEncryptionService(new OjsEncryptionServiceOptions
+            {
+                CodecServerUrl = "relative/path",
+            }));
+
+        Assert.Equal("Invalid URI: The format of the URI could not be determined.", exception.Message);
     }
 
     [Fact]
@@ -178,5 +224,18 @@ public class OjsEncryptionServiceTests
         var service2 = provider.GetService<OjsEncryptionService>();
 
         Assert.Same(service1, service2);
+    }
+
+    [Fact]
+    public void EncryptionService_DoesNotOwnMixedOptionsAesAndHttpState()
+    {
+        var fieldTypes = typeof(OjsEncryptionService)
+            .GetFields(BindingFlags.Instance | BindingFlags.NonPublic)
+            .Select(field => field.FieldType)
+            .ToList();
+
+        Assert.DoesNotContain(typeof(OjsEncryptionServiceOptions), fieldTypes);
+        Assert.DoesNotContain(typeof(AesGcm), fieldTypes);
+        Assert.DoesNotContain(typeof(HttpClient), fieldTypes);
     }
 }
