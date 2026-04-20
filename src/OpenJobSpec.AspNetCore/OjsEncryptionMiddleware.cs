@@ -1,4 +1,3 @@
-using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Builder;
@@ -92,58 +91,8 @@ internal sealed class OjsEncryptionMiddleware
         var ciphertext = root.GetProperty("ciphertext").GetString()
             ?? throw new InvalidOperationException("Missing ciphertext");
 
-        var decrypted = DecryptAes256Gcm(ciphertext, _options.EncryptionKey);
+        var decrypted = OjsAes256GcmPayloadCodec.Decrypt(ciphertext, _options.EncryptionKey);
         return decrypted;
-    }
-
-    internal static string DecryptAes256Gcm(string base64Payload, string base64Key)
-    {
-        var payload = Convert.FromBase64String(base64Payload);
-        var key = Convert.FromBase64String(base64Key);
-
-        // Payload format: [12-byte nonce][ciphertext][16-byte tag]
-        const int nonceSize = 12;
-        const int tagSize = 16;
-
-        if (payload.Length < nonceSize + tagSize)
-            throw new CryptographicException("Encrypted payload is too short");
-
-        var nonce = payload.AsSpan(0, nonceSize);
-        var tag = payload.AsSpan(payload.Length - tagSize);
-        var ciphertext = payload.AsSpan(nonceSize, payload.Length - nonceSize - tagSize);
-
-        var plaintext = new byte[ciphertext.Length];
-
-        using var aes = new AesGcm(key, tagSize);
-        aes.Decrypt(nonce, ciphertext, tag, plaintext);
-
-        return Encoding.UTF8.GetString(plaintext);
-    }
-
-    internal static string EncryptAes256Gcm(string plaintext, string base64Key)
-    {
-        var key = Convert.FromBase64String(base64Key);
-        var plaintextBytes = Encoding.UTF8.GetBytes(plaintext);
-
-        const int nonceSize = 12;
-        const int tagSize = 16;
-
-        var nonce = new byte[nonceSize];
-        RandomNumberGenerator.Fill(nonce);
-
-        var ciphertext = new byte[plaintextBytes.Length];
-        var tag = new byte[tagSize];
-
-        using var aes = new AesGcm(key, tagSize);
-        aes.Encrypt(nonce, plaintextBytes, ciphertext, tag);
-
-        // Payload format: [nonce][ciphertext][tag]
-        var payload = new byte[nonceSize + ciphertext.Length + tagSize];
-        nonce.CopyTo(payload, 0);
-        ciphertext.CopyTo(payload, nonceSize);
-        tag.CopyTo(payload, nonceSize + ciphertext.Length);
-
-        return Convert.ToBase64String(payload);
     }
 }
 
