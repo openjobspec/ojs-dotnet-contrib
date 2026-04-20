@@ -1,9 +1,7 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Hosting;
-using OpenJobSpec;
 
 namespace OpenJobSpec.WorkerService;
 
@@ -38,7 +36,7 @@ public static class OjsWorkerServiceExtensions
         var options = new OjsWorkerServiceOptions();
         configure(options);
 
-        RegisterServices(builder.Services, options);
+        OjsWorkerServiceGraph.Register(builder.Services, options);
         return builder;
     }
 
@@ -59,11 +57,8 @@ public static class OjsWorkerServiceExtensions
         this HostApplicationBuilder builder,
         IConfiguration configuration)
     {
-        var options = new OjsWorkerServiceOptions();
-        configuration.Bind(options);
-
-        ApplyEnvironmentOverrides(options);
-        RegisterServices(builder.Services, options);
+        var options = OjsWorkerServiceConfiguration.Bind(configuration);
+        OjsWorkerServiceGraph.Register(builder.Services, options);
         return builder;
     }
 
@@ -82,7 +77,7 @@ public static class OjsWorkerServiceExtensions
         {
             var options = new OjsWorkerServiceOptions();
             configure(options);
-            RegisterServices(services, options);
+            OjsWorkerServiceGraph.Register(services, options);
         });
     }
 
@@ -160,91 +155,6 @@ public static class OjsWorkerServiceExtensions
         return services;
     }
 
-    private static void RegisterServices(IServiceCollection services, OjsWorkerServiceOptions options)
-    {
-        services.AddSingleton(options);
-
-        services.TryAddSingleton<OJSClient>(sp =>
-            new OJSClient(options.BaseUrl, new OJSClientOptions
-            {
-                AuthToken = options.AuthToken,
-            }));
-
-        services.TryAddSingleton<OJSWorker>(sp =>
-        {
-            var worker = new OJSWorker(options.BaseUrl, new OJSWorkerOptions
-            {
-                AuthToken = options.AuthToken,
-                Queues = new List<string>(options.Queues),
-                Concurrency = options.Concurrency,
-                PollInterval = TimeSpan.FromSeconds(options.PollIntervalSeconds),
-                HeartbeatInterval = TimeSpan.FromSeconds(options.HeartbeatIntervalSeconds),
-                GracePeriod = TimeSpan.FromSeconds(options.ShutdownTimeoutSeconds),
-            });
-
-            foreach (var reg in sp.GetServices<OjsJobHandlerRegistration>())
-            {
-                worker.Register(reg.JobType, async ctx =>
-                {
-                    using var scope = sp.CreateScope();
-                    var handler = (IOjsJobHandler)scope.ServiceProvider.GetRequiredService(reg.HandlerType);
-                    await handler.HandleAsync(ctx);
-                });
-            }
-
-            return worker;
-        });
-
-        services.AddHostedService<OjsWorkerBackgroundService>();
-
-        if (options.EnableHealthCheck)
-        {
-            services.AddHealthChecks()
-                .Add(new HealthCheckRegistration(
-                    options.HealthCheckName,
-                    sp => new OjsWorkerHealthCheck(sp.GetRequiredService<OJSClient>()),
-                    failureStatus: null,
-                    tags: ["ojs", "worker"]));
-        }
-
-        if (options.EventListener.Enabled)
-        {
-            services.AddSingleton(options.EventListener);
-            services.AddHostedService<OjsEventListenerService>();
-        }
-
-        if (options.Cron.Enabled)
-        {
-            services.AddSingleton(options.Cron);
-            services.AddHostedService<OjsCronSchedulerService>();
-        }
-
-        if (!string.IsNullOrEmpty(options.Encryption.EncryptionKey) ||
-            !string.IsNullOrEmpty(options.Encryption.CodecServerUrl))
-        {
-            services.TryAddSingleton(options.Encryption);
-            services.TryAddSingleton<OjsEncryptionService>();
-        }
-    }
-
-    private static void ApplyEnvironmentOverrides(OjsWorkerServiceOptions options)
-    {
-        var envUrl = Environment.GetEnvironmentVariable("OJS_URL");
-        if (!string.IsNullOrEmpty(envUrl))
-            options.BaseUrl = envUrl;
-
-        var envToken = Environment.GetEnvironmentVariable("OJS_AUTH_TOKEN");
-        if (!string.IsNullOrEmpty(envToken))
-            options.AuthToken = envToken;
-
-        var envQueues = Environment.GetEnvironmentVariable("OJS_QUEUES");
-        if (!string.IsNullOrEmpty(envQueues))
-            options.Queues = envQueues.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-
-        var envConcurrency = Environment.GetEnvironmentVariable("OJS_CONCURRENCY");
-        if (int.TryParse(envConcurrency, out var concurrency))
-            options.Concurrency = concurrency;
-    }
 }
 
 /// <summary>

@@ -9,6 +9,36 @@ namespace OpenJobSpec.WorkerService.Tests;
 public class OjsWorkerServiceRegistrationTests
 {
     [Fact]
+    public void AddOjsWorker_PreservesDescriptorOrderLifetimesFactoriesAndReturnValue()
+    {
+        var builder = Host.CreateApplicationBuilder();
+        var initialDescriptorCount = builder.Services.Count;
+
+        var returned = builder.AddOjsWorker(opts =>
+        {
+            opts.BaseUrl = "http://test:8080";
+            opts.EnableHealthCheck = false;
+            opts.EventListener.Enabled = true;
+            opts.Cron.Enabled = true;
+            opts.Encryption.EncryptionKey = Convert.ToBase64String(new byte[32]);
+        });
+
+        Assert.Same(builder, returned);
+        Assert.Collection(
+            builder.Services.Skip(initialDescriptorCount),
+            descriptor => AssertInstanceDescriptor<OjsWorkerServiceOptions>(descriptor),
+            descriptor => AssertFactoryDescriptor<OJSClient>(descriptor),
+            descriptor => AssertFactoryDescriptor<OJSWorker>(descriptor),
+            descriptor => AssertTypeDescriptor<IHostedService, OjsWorkerBackgroundService>(descriptor),
+            descriptor => AssertInstanceDescriptor<OjsEventListenerOptions>(descriptor),
+            descriptor => AssertTypeDescriptor<IHostedService, OjsEventListenerService>(descriptor),
+            descriptor => AssertInstanceDescriptor<OjsCronOptions>(descriptor),
+            descriptor => AssertTypeDescriptor<IHostedService, OjsCronSchedulerService>(descriptor),
+            descriptor => AssertInstanceDescriptor<OjsEncryptionServiceOptions>(descriptor),
+            descriptor => AssertTypeDescriptor<OjsEncryptionService, OjsEncryptionService>(descriptor));
+    }
+
+    [Fact]
     public void AddOjsWorker_RegistersOptions()
     {
         var builder = Host.CreateApplicationBuilder();
@@ -316,6 +346,33 @@ public class OjsWorkerServiceRegistrationTests
         var hostedServices = provider.GetServices<IHostedService>();
 
         Assert.DoesNotContain(hostedServices, s => s.GetType().Name == "OjsCronSchedulerService");
+    }
+
+    private static void AssertInstanceDescriptor<TService>(ServiceDescriptor descriptor)
+    {
+        Assert.Equal(typeof(TService), descriptor.ServiceType);
+        Assert.Equal(ServiceLifetime.Singleton, descriptor.Lifetime);
+        Assert.IsType<TService>(descriptor.ImplementationInstance);
+        Assert.Null(descriptor.ImplementationFactory);
+        Assert.Null(descriptor.ImplementationType);
+    }
+
+    private static void AssertFactoryDescriptor<TService>(ServiceDescriptor descriptor)
+    {
+        Assert.Equal(typeof(TService), descriptor.ServiceType);
+        Assert.Equal(ServiceLifetime.Singleton, descriptor.Lifetime);
+        Assert.NotNull(descriptor.ImplementationFactory);
+        Assert.Null(descriptor.ImplementationInstance);
+        Assert.Null(descriptor.ImplementationType);
+    }
+
+    private static void AssertTypeDescriptor<TService, TImplementation>(ServiceDescriptor descriptor)
+    {
+        Assert.Equal(typeof(TService), descriptor.ServiceType);
+        Assert.Equal(ServiceLifetime.Singleton, descriptor.Lifetime);
+        Assert.Equal(typeof(TImplementation), descriptor.ImplementationType);
+        Assert.Null(descriptor.ImplementationFactory);
+        Assert.Null(descriptor.ImplementationInstance);
     }
 }
 
