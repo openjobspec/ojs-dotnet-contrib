@@ -10,6 +10,8 @@ namespace OpenJobSpec.WorkerService;
 /// </summary>
 internal sealed class OjsCronSchedulerService : BackgroundService
 {
+    internal static readonly TimeSpan DuplicateSuppressionWindow = TimeSpan.FromMinutes(1);
+
     private readonly OJSClient _client;
     private readonly IEnumerable<OjsCronRegistration> _schedules;
     private readonly OjsCronOptions _options;
@@ -55,7 +57,7 @@ internal sealed class OjsCronSchedulerService : BackgroundService
 
                     // Prevent duplicate triggers within the same minute
                     if (_lastRuns.TryGetValue(schedule.Name, out var lastRun) &&
-                        (now - lastRun).TotalSeconds < 60)
+                        now - lastRun < DuplicateSuppressionWindow)
                         continue;
 
                     var args = schedule.Args is not null
