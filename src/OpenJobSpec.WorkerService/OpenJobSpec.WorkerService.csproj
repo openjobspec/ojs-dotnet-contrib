@@ -6,7 +6,7 @@
     <Nullable>enable</Nullable>
     <RootNamespace>OpenJobSpec.WorkerService</RootNamespace>
     <PackageId>OpenJobSpec.WorkerService</PackageId>
-    <Version>0.2.0</Version>
+    <Version>0.4.0</Version>
     <Authors>Open Job Spec Contributors</Authors>
     <Description>.NET Worker Service integration for Open Job Spec — run OJS workers as standalone background services without ASP.NET Core</Description>
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>

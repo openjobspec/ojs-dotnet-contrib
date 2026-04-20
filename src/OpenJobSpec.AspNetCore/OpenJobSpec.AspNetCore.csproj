@@ -6,7 +6,7 @@
     <Nullable>enable</Nullable>
     <RootNamespace>OpenJobSpec.AspNetCore</RootNamespace>
     <PackageId>OpenJobSpec.AspNetCore</PackageId>
-    <Version>0.2.0</Version>
+    <Version>0.4.0</Version>
     <Authors>Open Job Spec Contributors</Authors>
     <Description>ASP.NET Core integration for Open Job Spec — dependency injection, health checks, and hosted service support</Description>
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
