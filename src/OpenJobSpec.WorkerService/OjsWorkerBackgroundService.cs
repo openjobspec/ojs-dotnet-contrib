@@ -10,6 +10,8 @@ namespace OpenJobSpec.WorkerService;
 /// </summary>
 internal sealed class OjsWorkerBackgroundService : BackgroundService
 {
+    internal static readonly TimeSpan ShutdownProgressInterval = TimeSpan.FromSeconds(5);
+
     private readonly OJSWorker _worker;
     private readonly OjsWorkerServiceOptions _options;
     private readonly ILogger<OjsWorkerBackgroundService> _logger;
@@ -81,7 +83,7 @@ internal sealed class OjsWorkerBackgroundService : BackgroundService
             // Log shutdown progress at intervals
             while (!stopTask.IsCompleted)
             {
-                if (await Task.WhenAny(stopTask, Task.Delay(5000)) != stopTask
+                if (await Task.WhenAny(stopTask, Task.Delay(ShutdownProgressInterval)) != stopTask
                     && _worker.ActiveJobCount > 0)
                 {
                     _logger.LogInformation(

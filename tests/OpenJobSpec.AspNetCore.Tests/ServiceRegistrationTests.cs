@@ -1,10 +1,27 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using OpenJobSpec.AspNetCore;
 
 namespace OpenJobSpec.AspNetCore.Tests;
 
 public class ServiceRegistrationTests
 {
+    [Fact]
+    public void AddOjs_PreservesDescriptorOrderLifetimesFactoriesAndReturnValue()
+    {
+        var services = new ServiceCollection();
+
+        var returned = services.AddOjs(opts => opts.BaseUrl = "http://test:8080");
+
+        Assert.Same(services, returned);
+        Assert.Collection(
+            services,
+            descriptor => AssertInstanceDescriptor<OjsOptions>(descriptor),
+            descriptor => AssertFactoryDescriptor<OJSClient>(descriptor),
+            descriptor => AssertFactoryDescriptor<OJSWorker>(descriptor),
+            descriptor => AssertTypeDescriptor<IHostedService, OjsWorkerHostedService>(descriptor));
+    }
+
     [Fact]
     public void AddOjs_RegistersOjsOptions()
     {
@@ -92,6 +109,33 @@ public class ServiceRegistrationTests
         var registrations = provider.GetServices<OjsHandlerRegistration>().ToList();
 
         Assert.Equal(2, registrations.Count);
+    }
+
+    private static void AssertInstanceDescriptor<TService>(ServiceDescriptor descriptor)
+    {
+        Assert.Equal(typeof(TService), descriptor.ServiceType);
+        Assert.Equal(ServiceLifetime.Singleton, descriptor.Lifetime);
+        Assert.IsType<TService>(descriptor.ImplementationInstance);
+        Assert.Null(descriptor.ImplementationFactory);
+        Assert.Null(descriptor.ImplementationType);
+    }
+
+    private static void AssertFactoryDescriptor<TService>(ServiceDescriptor descriptor)
+    {
+        Assert.Equal(typeof(TService), descriptor.ServiceType);
+        Assert.Equal(ServiceLifetime.Singleton, descriptor.Lifetime);
+        Assert.NotNull(descriptor.ImplementationFactory);
+        Assert.Null(descriptor.ImplementationInstance);
+        Assert.Null(descriptor.ImplementationType);
+    }
+
+    private static void AssertTypeDescriptor<TService, TImplementation>(ServiceDescriptor descriptor)
+    {
+        Assert.Equal(typeof(TService), descriptor.ServiceType);
+        Assert.Equal(ServiceLifetime.Singleton, descriptor.Lifetime);
+        Assert.Equal(typeof(TImplementation), descriptor.ImplementationType);
+        Assert.Null(descriptor.ImplementationFactory);
+        Assert.Null(descriptor.ImplementationInstance);
     }
 }
 

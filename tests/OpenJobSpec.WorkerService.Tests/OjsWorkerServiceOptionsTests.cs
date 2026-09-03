@@ -7,6 +7,12 @@ namespace OpenJobSpec.WorkerService.Tests;
 public class OjsWorkerServiceOptionsTests
 {
     [Fact]
+    public void ShutdownProgressInterval_IsFiveSeconds()
+    {
+        Assert.Equal(TimeSpan.FromSeconds(5), OjsWorkerBackgroundService.ShutdownProgressInterval);
+    }
+
+    [Fact]
     public void DefaultBaseUrl_IsLocalhost()
     {
         var options = new OjsWorkerServiceOptions();

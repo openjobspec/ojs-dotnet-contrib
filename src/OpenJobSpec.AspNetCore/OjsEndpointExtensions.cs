@@ -1,10 +1,5 @@
 using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
-using OpenJobSpec;
-using System.Text.Json;
 
 namespace OpenJobSpec.AspNetCore;
 
@@ -27,116 +22,7 @@ public static class OjsEndpointExtensions
     /// </example>
     public static IEndpointConventionBuilder MapOjsWebhook(this IEndpointRouteBuilder endpoints, string pattern = "/ojs/webhook")
     {
-        return endpoints.MapPost(pattern, async (HttpContext context) =>
-        {
-            var logger = context.RequestServices.GetService<ILoggerFactory>()
-                ?.CreateLogger("OpenJobSpec.Webhook");
-
-            WebhookRequest? request;
-            try
-            {
-                request = await JsonSerializer.DeserializeAsync<WebhookRequest>(
-                    context.Request.Body,
-                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-            }
-            catch (JsonException ex)
-            {
-                logger?.LogWarning(ex, "Failed to deserialize OJS webhook request");
-                context.Response.StatusCode = 400;
-                await context.Response.WriteAsJsonAsync(new
-                {
-                    status = "failed",
-                    error = new { code = "invalid_request", message = "Invalid JSON payload", retryable = false },
-                });
-                return;
-            }
-
-            if (request?.Job == null)
-            {
-                context.Response.StatusCode = 400;
-                await context.Response.WriteAsJsonAsync(new
-                {
-                    status = "failed",
-                    error = new { code = "invalid_request", message = "Missing job in request body", retryable = false },
-                });
-                return;
-            }
-
-            var registrations = context.RequestServices.GetServices<OjsHandlerRegistration>();
-            var registration = registrations.FirstOrDefault(r => r.JobType == request.Job.Type);
-
-            if (registration == null)
-            {
-                logger?.LogWarning("No handler registered for job type: {JobType}", request.Job.Type);
-                context.Response.StatusCode = 422;
-                await context.Response.WriteAsJsonAsync(new
-                {
-                    status = "failed",
-                    error = new
-                    {
-                        code = "no_handler",
-                        message = $"No handler registered for job type: {request.Job.Type}",
-                        retryable = false,
-                    },
-                });
-                return;
-            }
-
-            try
-            {
-                using var scope = context.RequestServices.CreateScope();
-                var handler = (IOjsJobHandler)scope.ServiceProvider.GetRequiredService(registration.HandlerType);
-
-                var job = new Job
-                {
-                    Id = request.Job.Id,
-                    Type = request.Job.Type,
-                    State = Enum.TryParse<JobState>(request.Job.State, true, out var state) ? state : JobState.Active,
-                    Queue = request.Job.Queue,
-                    Priority = request.Job.Priority,
-                    Attempt = request.Job.Attempt,
-                    MaxAttempts = request.Job.MaxAttempts,
-                };
-
-                if (request.Job.Args is not null)
-                {
-                    job.Args = new List<object?>(request.Job.Args);
-                }
-
-                if (request.Job.Meta is not null)
-                {
-                    job.Meta = new Dictionary<string, object?>(request.Job.Meta);
-                }
-
-                var jobContext = new JobContext(job);
-                await handler.HandleAsync(jobContext);
-
-                logger?.LogInformation("Webhook job {JobId} ({JobType}) completed", request.Job.Id, request.Job.Type);
-
-                await context.Response.WriteAsJsonAsync(new
-                {
-                    status = "completed",
-                    job_id = request.Job.Id,
-                });
-            }
-            catch (Exception ex)
-            {
-                logger?.LogError(ex, "Webhook job {JobId} ({JobType}) failed", request.Job.Id, request.Job.Type);
-
-                context.Response.StatusCode = 500;
-                await context.Response.WriteAsJsonAsync(new
-                {
-                    status = "failed",
-                    job_id = request.Job.Id,
-                    error = new
-                    {
-                        code = "handler_error",
-                        message = ex.Message,
-                        retryable = true,
-                    },
-                });
-            }
-        })
+        return endpoints.MapPost(pattern, OjsWebhookEndpointHandler.HandleAsync)
         .WithName("OjsWebhook")
         .WithDisplayName("OJS Job Webhook");
     }
@@ -162,13 +48,30 @@ public sealed class WebhookRequest
 /// </summary>
 public sealed class WebhookJob
 {
+    /// <summary>Job identifier.</summary>
     public string Id { get; set; } = "";
+
+    /// <summary>Job type used for handler routing.</summary>
     public string Type { get; set; } = "";
+
+    /// <summary>Current job state.</summary>
     public string State { get; set; } = "active";
+
+    /// <summary>Job arguments.</summary>
     public object[]? Args { get; set; }
+
+    /// <summary>Queue containing the job.</summary>
     public string Queue { get; set; } = "default";
+
+    /// <summary>Job priority.</summary>
     public int Priority { get; set; }
+
+    /// <summary>Current execution attempt.</summary>
     public int Attempt { get; set; } = 1;
+
+    /// <summary>Maximum execution attempts.</summary>
     public int MaxAttempts { get; set; } = 3;
+
+    /// <summary>Optional job metadata.</summary>
     public Dictionary<string, object?>? Meta { get; set; }
 }

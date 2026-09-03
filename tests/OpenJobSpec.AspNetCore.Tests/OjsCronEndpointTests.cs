@@ -1,9 +1,35 @@
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http.Metadata;
+using Microsoft.AspNetCore.Routing;
 using OpenJobSpec.AspNetCore;
 
 namespace OpenJobSpec.AspNetCore.Tests;
 
 public class OjsCronEndpointTests
 {
+    [Fact]
+    public void MapOjsCron_PreservesRouteContractAndOrder()
+    {
+        var builder = WebApplication.CreateBuilder();
+        var app = builder.Build();
+
+        app.MapOjsCron();
+
+        var endpoints = ((IEndpointRouteBuilder)app).DataSources
+            .SelectMany(source => source.Endpoints)
+            .OfType<RouteEndpoint>()
+            .ToList();
+
+        Assert.Collection(
+            endpoints,
+            endpoint => AssertEndpoint(endpoint, "POST", "/ojs/cron/", "OjsCronCreate", "Create Cron Schedule"),
+            endpoint => AssertEndpoint(endpoint, "GET", "/ojs/cron/", "OjsCronList", "List Cron Schedules"),
+            endpoint => AssertEndpoint(endpoint, "GET", "/ojs/cron/{id}", "OjsCronGet", "Get Cron Schedule"),
+            endpoint => AssertEndpoint(endpoint, "DELETE", "/ojs/cron/{id}", "OjsCronDelete", "Delete Cron Schedule"),
+            endpoint => AssertEndpoint(endpoint, "PUT", "/ojs/cron/{id}/pause", "OjsCronPause", "Pause Cron Schedule"),
+            endpoint => AssertEndpoint(endpoint, "PUT", "/ojs/cron/{id}/resume", "OjsCronResume", "Resume Cron Schedule"));
+    }
+
     [Fact]
     public void CronScheduleRequest_RecordProperties_ArePreserved()
     {
@@ -92,5 +118,18 @@ public class OjsCronEndpointTests
         Assert.Equal("default", request.Queue);
         Assert.Null(request.Args);
         Assert.Null(request.Timezone);
+    }
+
+    private static void AssertEndpoint(
+        RouteEndpoint endpoint,
+        string method,
+        string route,
+        string name,
+        string displayName)
+    {
+        Assert.Equal(route, endpoint.RoutePattern.RawText);
+        Assert.Equal(displayName, endpoint.DisplayName);
+        Assert.Equal(name, endpoint.Metadata.GetMetadata<IEndpointNameMetadata>()?.EndpointName);
+        Assert.Equal([method], endpoint.Metadata.GetMetadata<HttpMethodMetadata>()?.HttpMethods);
     }
 }

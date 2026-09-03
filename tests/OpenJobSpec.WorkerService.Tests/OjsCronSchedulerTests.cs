@@ -7,6 +7,12 @@ namespace OpenJobSpec.WorkerService.Tests;
 public class OjsCronSchedulerTests
 {
     [Fact]
+    public void DuplicateSuppressionWindow_IsOneMinute()
+    {
+        Assert.Equal(TimeSpan.FromMinutes(1), OjsCronSchedulerService.DuplicateSuppressionWindow);
+    }
+
+    [Fact]
     public void OjsCronRegistration_RecordProperties()
     {
         var reg = new OjsCronRegistration("hourly", "0 * * * *", "report.generate");

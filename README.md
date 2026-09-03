@@ -1,10 +1,16 @@
 # OJS .NET Contrib
-[![Stability: beta](https://img.shields.io/badge/stability-beta-yellow.svg)](https://github.com/openjobspec/openjobspec/blob/main/STABILITY.md)
+![Stability: beta](https://img.shields.io/badge/stability-beta-yellow.svg)
 
-[![NuGet](https://img.shields.io/nuget/v/OpenJobSpec.AspNetCore)](https://www.nuget.org/packages/OpenJobSpec.AspNetCore)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+[![CI](https://github.com/openjobspec/ojs-dotnet-contrib/actions/workflows/ci.yml/badge.svg)](https://github.com/openjobspec/ojs-dotnet-contrib/actions/workflows/ci.yml)
 
 .NET framework integrations for the [Open Job Spec](https://openjobspec.org) .NET SDK.
+
+Requires the .NET 10 SDK and runtime.
+
+The contrib packages are not currently published on NuGet. Release automation
+and package validation target the coordinated 0.5.0 tag. Until publication, build
+the packages from this repository with a sibling `ojs-dotnet-sdk` checkout.
 
 ## Packages
 
@@ -22,7 +28,7 @@ ASP.NET Core integration providing dependency injection, health checks, middlewa
 ### Installation
 
 ```bash
-dotnet add package OpenJobSpec.AspNetCore
+dotnet pack src/OpenJobSpec.AspNetCore/OpenJobSpec.AspNetCore.csproj -c Release
 ```
 
 ## Quick Start
@@ -146,7 +152,7 @@ The webhook endpoint accepts POST requests with a job payload, dispatches to the
 
 ## License
 
-Apache License 2.0 — see [LICENSE](../LICENSE) for details.
+Apache License 2.0 — see [LICENSE](LICENSE) for details.
 
 ---
 
@@ -157,7 +163,7 @@ Apache License 2.0 — see [LICENSE](../LICENSE) for details.
 ### Installation
 
 ```bash
-dotnet add package OpenJobSpec.WorkerService
+dotnet pack src/OpenJobSpec.WorkerService/OpenJobSpec.WorkerService.csproj -c Release
 ```
 
 ### Quick Start
@@ -266,5 +272,4 @@ await Host.CreateDefaultBuilder(args)
 
 ### License
 
-Apache License 2.0 — see [LICENSE](../LICENSE) for details.
-
+Apache License 2.0 — see [LICENSE](LICENSE) for details.
